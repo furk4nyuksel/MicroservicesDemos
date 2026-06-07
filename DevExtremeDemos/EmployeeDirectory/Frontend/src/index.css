@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "devextreme/dist/css/dx.light.css";
+
+body {
+  font-family: 'Inter', sans-serif;
+  @apply bg-gray-50 text-slate-800;
+  margin: 0;
+  padding: 0;
+}
+
+/* DevExtreme Customizations for a Premium Look */
+.dx-datagrid {
+  @apply rounded-xl border-none shadow-sm bg-white overflow-hidden;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.dx-datagrid-headers {
+  @apply bg-slate-100 text-slate-600 font-medium tracking-wide uppercase text-xs;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.dx-datagrid-content .dx-datagrid-table .dx-row > td {
+  @apply align-middle py-4 px-6 border-b border-gray-100;
+}
+
+.dx-datagrid-rowsview .dx-row:hover {
+  @apply bg-slate-50 transition-colors duration-200;
+}
+
+.dx-datagrid-filter-row {
+  @apply bg-white;
+}
+
+.dx-button-mode-contained.dx-button-default {
+  @apply bg-blue-600 border-none shadow-sm hover:bg-blue-700 hover:shadow-md transition-all duration-200;
+}
+
+/* Custom Status Badges */
+.status-badge {
+  @apply px-3 py-1 rounded-full text-xs font-semibold tracking-wide inline-flex items-center;
+}
+
+.status-active {
+  @apply bg-emerald-100 text-emerald-700;
+}
+
+.status-inactive {
+  @apply bg-rose-100 text-rose-700;
+}
+
+.type-badge {
+  @apply px-3 py-1 rounded-full text-xs font-medium inline-flex items-center;
+}
+
+.type-office {
+  @apply bg-indigo-100 text-indigo-700;
+}
+
+.type-hybrid {
+  @apply bg-purple-100 text-purple-700;
+}
