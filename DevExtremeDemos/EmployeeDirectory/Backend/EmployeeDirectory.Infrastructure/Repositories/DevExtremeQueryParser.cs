@@ -73,16 +73,25 @@ public static class DevExtremeQueryParser
             ? $"{field}.keyword"
             : field ?? string.Empty;
 
+    /// <summary>
+    /// Returns the Elasticsearch field name to use for <b>grouping</b>.
+    /// Uses .keyword for exact grouping buckets.
+    /// </summary>
+    public static string GetGroupField<T>(string? fieldName)
+    {
+        var kind = GetFieldKind<T>(fieldName);
+        return GetFilterField(fieldName, kind);
+    }
+
     // ─── Filter parsing ───────────────────────────────────────────────
 
-    public static Action<QueryDescriptor<T>> ParseFilter<T>(string? filterJson) where T : class
+    public static Action<QueryDescriptor<T>> ParseFilter<T>(JsonElement? filterElement) where T : class
     {
-        if (string.IsNullOrWhiteSpace(filterJson)) return q => q.MatchAll();
+        if (!filterElement.HasValue) return q => q.MatchAll();
 
         try
         {
-            var element = JsonSerializer.Deserialize<JsonElement>(filterJson);
-            return BuildQuery<T>(element);
+            return BuildQuery<T>(filterElement.Value);
         }
         catch
         {
@@ -286,22 +295,18 @@ public static class DevExtremeQueryParser
 
     // ─── Sort parsing ─────────────────────────────────────────────────
 
-    public static Action<SortOptionsDescriptor<T>>? ParseSort<T>(string? sortJson) where T : class
+    public static Action<SortOptionsDescriptor<T>>? ParseSort<T>(IEnumerable<EmployeeDirectory.Domain.Models.SortingInfo>? sortItems) where T : class
     {
-        if (string.IsNullOrWhiteSpace(sortJson)) return null;
+        if (sortItems == null || !sortItems.Any()) return null;
 
         try
         {
-            var element = JsonSerializer.Deserialize<JsonElement>(sortJson);
-            if (element.ValueKind != JsonValueKind.Array || element.GetArrayLength() == 0)
-                return null;
-
             return s =>
             {
-                foreach (var sortItem in element.EnumerateArray())
+                foreach (var sortItem in sortItems)
                 {
-                    var selector = sortItem.GetProperty("selector").GetString();
-                    var desc = sortItem.TryGetProperty("desc", out var descProp) && descProp.GetBoolean();
+                    var selector = sortItem.Selector;
+                    var desc = sortItem.Desc;
 
                     var kind = GetFieldKind<T>(selector);
                     var sortField = GetSortField(selector, kind);

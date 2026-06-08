@@ -55,30 +55,72 @@ public class ElasticsearchRepository<T> : IElasticsearchRepository<T> where T : 
         return response.Documents ?? Enumerable.Empty<T>();
     }
 
-    public async Task<(IEnumerable<T> Data, long TotalCount)> LoadGridDataAsync(int skip, int take, string filterJson, string sortJson)
+    public async Task<(IEnumerable<object> Data, long TotalCount, int GroupCount)> LoadGridDataAsync(
+        int skip, 
+        int take, 
+        System.Text.Json.JsonElement? filter, 
+        IEnumerable<EmployeeDirectory.Domain.Models.SortingInfo>? sort,
+        IEnumerable<EmployeeDirectory.Domain.Models.GroupingInfo>? group)
     {
-        var filterQuery = DevExtremeQueryParser.ParseFilter<T>(filterJson);
-        var sortDescriptor = DevExtremeQueryParser.ParseSort<T>(sortJson);
+        var filterQuery = DevExtremeQueryParser.ParseFilter<T>(filter);
+        var sortDescriptor = DevExtremeQueryParser.ParseSort<T>(sort);
+        bool isGrouped = group != null && group.Any();
 
         var response = await _client.SearchAsync<T>(s => 
         {
             s.Index(_indexName);
-            s.From(skip);
-            s.Size(take > 0 ? take : 20);
             s.Query(filterQuery);
 
-            if (sortDescriptor != null)
+            if (isGrouped)
             {
-                s.Sort(sortDescriptor);
+                s.Size(0); // We only need aggregations for grouping
+                var groupField = DevExtremeQueryParser.GetGroupField<T>(group!.First().Selector);
+                s.Aggregations(a => a
+                    .Terms("grouping", t => t
+                        .Field(groupField)
+                        .Size(100) // Default max number of groups
+                    )
+                );
+            }
+            else
+            {
+                s.From(skip);
+                s.Size(take > 0 ? take : 20);
+
+                if (sortDescriptor != null)
+                {
+                    s.Sort(sortDescriptor);
+                }
             }
         });
 
         if (!response.IsValidResponse)
         {
-            return (Enumerable.Empty<T>(), 0);
+            return (Enumerable.Empty<object>(), 0, 0);
         }
 
-        return (response.Documents ?? Enumerable.Empty<T>(), response.Total);
+        if (isGrouped)
+        {
+            var termsAgg = response.Aggregations?.GetStringTerms("grouping");
+            if (termsAgg != null)
+            {
+                var isDesc = group!.First().Desc;
+                var buckets = isDesc ? termsAgg.Buckets.OrderByDescending(b => b.Key).ToList() : termsAgg.Buckets.ToList();
+
+                var groups = buckets.Select(b => new EmployeeDirectory.Domain.Models.GroupItem
+                {
+                    Key = b.Key,
+                    Items = null,
+                    Count = b.DocCount,
+                    Summary = new object[] { b.DocCount } // Default group summary mapped to Count
+                }).ToList();
+
+                var pagedGroups = groups.Skip(skip).Take(take > 0 ? take : groups.Count).ToList();
+                return (pagedGroups, response.Total, groups.Count);
+            }
+        }
+
+        return (response.Documents ?? Enumerable.Empty<object>(), response.Total, 0);
     }
     public async Task<T> GetByIdAsync(string id)
     {

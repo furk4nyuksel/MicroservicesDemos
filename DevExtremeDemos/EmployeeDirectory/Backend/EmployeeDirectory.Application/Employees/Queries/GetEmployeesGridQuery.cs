@@ -4,7 +4,7 @@ using MediatR;
 
 namespace EmployeeDirectory.Application.Employees.Queries;
 
-public class GetEmployeesGridQuery : IRequest<LoadResult<Employee>>
+public class GetEmployeesGridQuery : IRequest<LoadResult>
 {
     public DevExtremeLoadOptions LoadOptions { get; set; }
 }

@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading.Tasks;
+using EmployeeDirectory.Domain.Models;
 
 namespace EmployeeDirectory.Domain.Interfaces;
 
@@ -11,5 +13,10 @@ public interface IElasticsearchRepository<T> where T : class
     Task CreateBulkAsync(IEnumerable<T> entities);
     Task UpdateAsync(T entity);
     Task DeleteAsync(string id);
-    Task<(IEnumerable<T> Data, long TotalCount)> LoadGridDataAsync(int skip, int take, string filterJson, string sortJson);
+    Task<(IEnumerable<object> Data, long TotalCount, int GroupCount)> LoadGridDataAsync(
+        int skip, 
+        int take, 
+        JsonElement? filter, 
+        IEnumerable<SortingInfo>? sort,
+        IEnumerable<GroupingInfo>? group);
 }

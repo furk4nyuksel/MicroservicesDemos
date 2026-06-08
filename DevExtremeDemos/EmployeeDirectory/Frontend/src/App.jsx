@@ -7,7 +7,12 @@ import DataGrid, {
   HeaderFilter,
   SearchPanel,
   Sorting,
-  RemoteOperations
+  RemoteOperations,
+  Summary,
+  TotalItem,
+  GroupPanel,
+  Grouping,
+  Lookup
 } from 'devextreme-react/data-grid';
 import CustomStore from 'devextreme/data/custom_store';
 import axios from 'axios';
@@ -19,17 +24,40 @@ const employeeStore = new CustomStore({
   key: 'id',
   load: async (loadOptions) => {
     try {
+      let normalizedSort = loadOptions.sort;
+      if (normalizedSort) {
+        normalizedSort = Array.isArray(normalizedSort) ? normalizedSort : [normalizedSort];
+        normalizedSort = normalizedSort.map(s => {
+          if (typeof s === 'string') return { selector: s, desc: false };
+          return { ...s, desc: s.desc === true || s.desc === 'true' };
+        });
+      }
+
+      let normalizedGroup = loadOptions.group;
+      if (normalizedGroup) {
+        normalizedGroup = Array.isArray(normalizedGroup) ? normalizedGroup : [normalizedGroup];
+        normalizedGroup = normalizedGroup.map(s => {
+          if (typeof s === 'string') return { selector: s, desc: false };
+          return { ...s, desc: s.desc === true || s.desc === 'true' };
+        });
+      }
+
       const response = await axios.post(API_URL, {
         skip: loadOptions.skip || 0,
         take: loadOptions.take || 20,
         requireTotalCount: loadOptions.requireTotalCount,
-        sort: loadOptions.sort ? JSON.stringify(loadOptions.sort) : null,
-        filter: loadOptions.filter ? JSON.stringify(loadOptions.filter) : null
+        requireGroupCount: loadOptions.requireGroupCount,
+        sort: normalizedSort,
+        group: normalizedGroup,
+        filter: loadOptions.filter,
+        totalSummary: loadOptions.totalSummary
       });
-      
+
       return {
         data: response.data.data,
-        totalCount: response.data.totalCount
+        totalCount: response.data.totalCount,
+        groupCount: response.data.groupCount,
+        summary: response.data.summary
       };
     } catch (error) {
       console.error('Error loading data', error);
@@ -61,7 +89,7 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-50 p-8 font-sans">
       <div className="max-w-7xl mx-auto">
-        
+
         <div className="mb-8 flex justify-between items-end">
           <div>
             <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Employee Directory</h1>
@@ -78,49 +106,81 @@ function App() {
             columnAutoWidth={true}
             className="premium-grid"
           >
-            <RemoteOperations 
+            <RemoteOperations
               paging={true}
               filtering={true}
               sorting={true}
+              summary={true}
+              grouping={true}
+              groupPaging={true}
             />
+            <GroupPanel visible={true} />
+            <Grouping autoExpandAll={false} />
             <FilterRow visible={true} />
             <HeaderFilter visible={true} />
             <SearchPanel visible={true} width={240} placeholder="Search employees..." />
             <Sorting mode="multiple" />
             <Paging defaultPageSize={15} />
-            <Pager 
-              showPageSizeSelector={true} 
-              allowedPageSizes={[15, 25, 50, 100]} 
-              showInfo={true} 
+            <Pager
+              showPageSizeSelector={true}
+              allowedPageSizes={[15, 25, 50, 100]}
+              showInfo={true}
             />
+
+            <Summary>
+              <TotalItem
+                column="firstName"
+                summaryType="count"
+                displayFormat="Total Employees: {0}"
+              />
+            </Summary>
 
             <Column dataField="firstName" caption="First Name" />
             <Column dataField="lastName" caption="Last Name" />
             <Column dataField="department" caption="Department" />
             <Column dataField="phone" caption="Phone" />
             <Column dataField="email" caption="Email" />
-            <Column 
-              dataField="employeeType" 
-              caption="Type" 
-              cellRender={typeCellRender} 
+            <Column
+              dataField="employeeType"
+              caption="Type"
+              cellRender={typeCellRender}
               alignment="center"
-            />
+            >
+              <Lookup
+                dataSource={[
+                  { value: 0, text: 'Hybrid' },
+                  { value: 1, text: 'Office' }
+                ]}
+                valueExpr="value"
+                displayExpr="text"
+              />
+            </Column>
             <Column dataField="city" caption="City" />
-            <Column 
-              dataField="workStatus" 
-              caption="Status" 
-              cellRender={statusCellRender} 
+            <Column
+              dataField="workStatus"
+              caption="Status"
+              dataType="boolean"
+              cellRender={statusCellRender}
               alignment="center"
-            />
-            <Column 
-              dataField="hireDate" 
-              caption="Hire Date" 
+            >
+              <Lookup
+                dataSource={[
+                  { value: true, text: 'Active' },
+                  { value: false, text: 'Inactive' }
+                ]}
+                valueExpr="value"
+                displayExpr="text"
+              />
+            </Column>
+            <Column
+              dataField="hireDate"
+              caption="Hire Date"
               dataType="date"
               format="dd MMM yyyy"
             />
           </DataGrid>
         </div>
-        
+
       </div>
     </div>
   );

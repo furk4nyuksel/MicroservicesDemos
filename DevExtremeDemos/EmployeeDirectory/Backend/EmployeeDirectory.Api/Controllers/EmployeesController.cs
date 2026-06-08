@@ -26,8 +26,9 @@ public class EmployeesController : ControllerBase
     [HttpPost("grid")]
     public async Task<IActionResult> GetGridData([FromBody] EmployeeDirectory.Application.Common.Models.DevExtremeLoadOptions loadOptions)
     {
+        Console.WriteLine("PAYLOAD RECEIVED: " + System.Text.Json.JsonSerializer.Serialize(loadOptions));
         var result = await _mediator.Send(new EmployeeDirectory.Application.Employees.Queries.GetEmployeesGridQuery { LoadOptions = loadOptions ?? new EmployeeDirectory.Application.Common.Models.DevExtremeLoadOptions() });
-        return Ok(new { data = result.Data, totalCount = result.TotalCount });
+        return Ok(new { data = result.Data, totalCount = result.TotalCount, groupCount = result.GroupCount, summary = result.Summary });
     }
 
     [HttpPost("seed")]
