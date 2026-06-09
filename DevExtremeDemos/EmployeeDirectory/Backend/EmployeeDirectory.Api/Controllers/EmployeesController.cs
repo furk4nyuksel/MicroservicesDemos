@@ -1,4 +1,6 @@
 using EmployeeDirectory.Application.Employees.Queries;
+using EmployeeDirectory.Domain.Entities;
+using EmployeeDirectory.Domain.Interfaces;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
@@ -10,10 +12,12 @@ namespace EmployeeDirectory.Api.Controllers;
 public class EmployeesController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly IElasticsearchRepository<Employee> _repository;
 
-    public EmployeesController(IMediator mediator)
+    public EmployeesController(IMediator mediator, IElasticsearchRepository<Employee> repository)
     {
-        _mediator = mediator;
+        _mediator    = mediator;
+        _repository  = repository;
     }
 
     [HttpGet]
@@ -26,7 +30,6 @@ public class EmployeesController : ControllerBase
     [HttpPost("grid")]
     public async Task<IActionResult> GetGridData([FromBody] EmployeeDirectory.Application.Common.Models.DevExtremeLoadOptions loadOptions)
     {
-        Console.WriteLine("PAYLOAD RECEIVED: " + System.Text.Json.JsonSerializer.Serialize(loadOptions));
         var result = await _mediator.Send(new EmployeeDirectory.Application.Employees.Queries.GetEmployeesGridQuery { LoadOptions = loadOptions ?? new EmployeeDirectory.Application.Common.Models.DevExtremeLoadOptions() });
         return Ok(new { data = result.Data, totalCount = result.TotalCount, groupCount = result.GroupCount, summary = result.Summary });
     }
@@ -40,5 +43,19 @@ public class EmployeesController : ControllerBase
             return Ok(new { message = $"{count} dummy employees generated and pushed to Elastic." });
         }
         return BadRequest(new { message = "Failed to generate dummy data." });
+    }
+
+    [HttpGet("suggest")]
+    public async Task<IActionResult> Suggest(
+        [FromQuery] string field,
+        [FromQuery] string query,
+        [FromQuery] string op = "contains",
+        [FromQuery] int max = 10)
+    {
+        if (string.IsNullOrWhiteSpace(field) || string.IsNullOrWhiteSpace(query))
+            return Ok(System.Array.Empty<string>());
+
+        var result = await _repository.SuggestFieldAsync(field, query, op, max);
+        return Ok(result);
     }
 }

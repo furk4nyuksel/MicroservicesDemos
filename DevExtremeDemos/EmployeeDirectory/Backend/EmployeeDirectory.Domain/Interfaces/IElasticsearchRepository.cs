@@ -15,8 +15,9 @@ public interface IElasticsearchRepository<T> where T : class
     Task DeleteAsync(string id);
     Task<(IEnumerable<object> Data, long TotalCount, int GroupCount)> LoadGridDataAsync(
         int skip, 
-        int take, 
+        int take,
         JsonElement? filter, 
         IEnumerable<SortingInfo>? sort,
         IEnumerable<GroupingInfo>? group);
+    Task<IEnumerable<string>> SuggestFieldAsync(string fieldName, string query, string operatorHint, int maxResults = 10);
 }

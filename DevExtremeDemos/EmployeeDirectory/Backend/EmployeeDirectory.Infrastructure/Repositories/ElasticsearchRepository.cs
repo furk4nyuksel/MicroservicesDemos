@@ -130,8 +130,51 @@ public class ElasticsearchRepository<T> : IElasticsearchRepository<T> where T : 
 
     public async Task UpdateAsync(T entity)
     {
-        await _client.UpdateAsync<T, T>(_indexName, "dummy_id", u => u.Doc(entity)); // We will need the actual ID for updating.
-        // For a generic repo, updating requires the ID. Since this is an MVP for the grid, we mainly need GetAll and BulkInsert.
-        // To be safe, if we implement Update, we need the ID property. 
+        await _client.UpdateAsync<T, T>(_indexName, "dummy_id", u => u.Doc(entity));
+    }
+
+    /// <summary>
+    /// Returns distinct field values matching the given prefix/wildcard query.
+    /// Used by the filter panel autocomplete.
+    /// </summary>
+    public async Task<IEnumerable<string>> SuggestFieldAsync(string fieldName, string query, string operatorHint, int maxResults = 10)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName) || string.IsNullOrWhiteSpace(query))
+            return Enumerable.Empty<string>();
+
+        // Decide wildcard pattern based on operator
+        var pattern = operatorHint switch
+        {
+            "startswith"  => $"{query.ToLowerInvariant()}*",
+            "endswith"    => $"*{query.ToLowerInvariant()}",
+            "contains"    => $"*{query.ToLowerInvariant()}*",
+            _             => $"*{query.ToLowerInvariant()}*", // default: contains
+        };
+
+        var keywordField = $"{fieldName}.keyword";
+
+        var response = await _client.SearchAsync<T>(s => s
+            .Index(_indexName)
+            .Size(0) // only aggregation needed
+            .Query(q => q
+                .Wildcard(w => w
+                    .Field(keywordField)
+                    .Wildcard(pattern)
+                    .CaseInsensitive(true)
+                )
+            )
+            .Aggregations(a => a
+                .Terms("suggestions", t => t
+                    .Field(keywordField)
+                    .Size(maxResults)
+                )
+            )
+        );
+
+        if (!response.IsValidResponse)
+            return Enumerable.Empty<string>();
+
+        var terms = response.Aggregations?.GetStringTerms("suggestions");
+        return terms?.Buckets.Select(b => b.Key.ToString()) ?? Enumerable.Empty<string>();
     }
 }

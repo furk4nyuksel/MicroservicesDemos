@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import MultiSelectInput from './MultiSelectInput';
 
 // ─── Column & Operator definitions ───────────────────────────────────────────
 
@@ -10,7 +11,7 @@ const COLUMNS = [
   { field: 'phone',        label: 'Phone',       type: 'string' },
   { field: 'email',        label: 'Email',       type: 'string' },
   { field: 'employeeType', label: 'Type',        type: 'enum',   options: ['Office', 'Hybrid'] },
-  { field: 'workStatus',   label: 'Status',      type: 'boolean',options: ['true', 'false'] },
+  { field: 'workStatus',   label: 'Status',      type: 'boolean', options: ['true', 'false'] },
   { field: 'hireDate',     label: 'Hire Date',   type: 'date' },
 ];
 
@@ -38,14 +39,6 @@ const OPERATORS_BY_TYPE = {
     { value: '<',  label: 'Önce (<)' },
     { value: '<=', label: 'Bu tarih veya önce (≤)' },
   ],
-  number: [
-    { value: '=',  label: 'Eşittir (=)' },
-    { value: '<>', label: 'Eşit değil (≠)' },
-    { value: '>',  label: 'Büyük (>)' },
-    { value: '>=', label: 'Büyük veya eşit (≥)' },
-    { value: '<',  label: 'Küçük (<)' },
-    { value: '<=', label: 'Küçük veya eşit (≤)' },
-  ],
 };
 
 const LOGIC_OPS = [
@@ -53,29 +46,51 @@ const LOGIC_OPS = [
   { value: 'or',  label: 'VEYA (OR)' },
 ];
 
-// ─── Build DevExtreme filter array from conditions ────────────────────────────
-function buildDevExtremeFilter(conditions, logic) {
-  if (conditions.length === 0) return null;
-  if (conditions.length === 1) {
-    const c = conditions[0];
-    const val = parseValue(c);
-    return [c.field, c.operator, val];
-  }
+// ─── Build DevExtreme filter from conditions ──────────────────────────────────
+// condition.value may be a string OR an array of strings (multi-select)
+function buildConditionFilter(c) {
+  const col = COLUMNS.find(col => col.field === c.field);
+  const castValue = (v) => {
+    if (!col) return v;
+    if (col.type === 'boolean') return v === 'true' || v === true;
+    return v;
+  };
+
+  const values = Array.isArray(c.value) ? c.value : [c.value];
+
+  if (values.length === 0) return null;
+  if (values.length === 1) return [c.field, c.operator, castValue(values[0])];
+
+  // Multiple values → OR them together for "contains/startswith/=", AND for "notcontains/<>"
+  const innerLogic = (c.operator === 'notcontains' || c.operator === '<>') ? 'and' : 'or';
   const parts = [];
-  conditions.forEach((c, i) => {
-    const val = parseValue(c);
-    parts.push([c.field, c.operator, val]);
-    if (i < conditions.length - 1) parts.push(logic);
+  values.forEach((v, i) => {
+    parts.push([c.field, c.operator, castValue(v)]);
+    if (i < values.length - 1) parts.push(innerLogic);
   });
   return parts;
 }
 
-function parseValue(condition) {
-  const col = COLUMNS.find(c => c.field === condition.field);
-  if (!col) return condition.value;
-  if (col.type === 'boolean') return condition.value === 'true';
-  if (col.type === 'date') return condition.value; // ISO string
-  return condition.value;
+function buildDevExtremeFilter(conditions, logic) {
+  const filled = conditions.filter(c => {
+    const v = c.value;
+    return Array.isArray(v) ? v.length > 0 : (v !== '' && v !== undefined && v !== null);
+  });
+  if (filled.length === 0) return null;
+  if (filled.length === 1) return buildConditionFilter(filled[0]);
+
+  const parts = [];
+  filled.forEach((c, i) => {
+    parts.push(buildConditionFilter(c));
+    if (i < filled.length - 1) parts.push(logic);
+  });
+  return parts;
+}
+
+function hasValue(condition) {
+  const v = condition.value;
+  if (Array.isArray(v)) return v.length > 0;
+  return v !== '' && v !== undefined && v !== null;
 }
 
 // ─── Single filter row ────────────────────────────────────────────────────────
@@ -86,24 +101,23 @@ function FilterRow({ condition, index, onUpdate, onRemove }) {
   function handleFieldChange(e) {
     const newCol = COLUMNS.find(c => c.field === e.target.value);
     const defaultOp = (OPERATORS_BY_TYPE[newCol.type] || OPERATORS_BY_TYPE.string)[0].value;
-    onUpdate(index, { field: e.target.value, operator: defaultOp, value: '' });
+    onUpdate(index, { field: e.target.value, operator: defaultOp, value: [] });
   }
 
   function handleOperatorChange(e) {
-    onUpdate(index, { ...condition, operator: e.target.value });
-  }
-
-  function handleValueChange(e) {
-    onUpdate(index, { ...condition, value: e.target.value });
+    // Reset value when operator changes so stale selections don't persist
+    onUpdate(index, { ...condition, operator: e.target.value, value: [] });
   }
 
   const renderValueInput = () => {
+    // Boolean / enum → plain select (only a few fixed options)
     if (col.type === 'boolean' || col.type === 'enum') {
       const opts = col.options || [];
+      const currentVal = Array.isArray(condition.value) ? condition.value[0] || '' : condition.value;
       return (
         <select
-          value={condition.value}
-          onChange={handleValueChange}
+          value={currentVal}
+          onChange={e => onUpdate(index, { ...condition, value: e.target.value ? [e.target.value] : [] })}
           className="fp-select"
         >
           <option value="">Seçiniz...</option>
@@ -115,56 +129,56 @@ function FilterRow({ condition, index, onUpdate, onRemove }) {
         </select>
       );
     }
+
+    // Date → plain date input (single value)
     if (col.type === 'date') {
+      const currentVal = Array.isArray(condition.value) ? condition.value[0] || '' : condition.value;
       return (
         <input
           type="date"
-          value={condition.value}
-          onChange={handleValueChange}
+          value={currentVal}
+          onChange={e => onUpdate(index, { ...condition, value: e.target.value ? [e.target.value] : [] })}
           className="fp-input"
         />
       );
     }
+
+    // String → autocomplete multi-select
     return (
-      <input
-        type="text"
-        value={condition.value}
-        onChange={handleValueChange}
-        placeholder="Değer girin..."
-        className="fp-input"
+      <MultiSelectInput
+        field={condition.field}
+        operator={condition.operator}
+        selectedValues={Array.isArray(condition.value) ? condition.value : (condition.value ? [condition.value] : [])}
+        onChange={vals => onUpdate(index, { ...condition, value: vals })}
+        placeholder="Ara ve seç..."
       />
     );
   };
 
   return (
     <div className="fp-filter-row">
-      <div className="fp-filter-row-inner">
-        {/* Field selector */}
+      {/* Field + Operator row */}
+      <div className="fp-row-header">
         <select value={condition.field} onChange={handleFieldChange} className="fp-select fp-field-select">
           {COLUMNS.map(c => (
             <option key={c.field} value={c.field}>{c.label}</option>
           ))}
         </select>
-
-        {/* Operator */}
         <select value={condition.operator} onChange={handleOperatorChange} className="fp-select fp-op-select">
           {operators.map(op => (
             <option key={op.value} value={op.value}>{op.label}</option>
           ))}
         </select>
-
-        {/* Value */}
-        <div className="fp-value-wrap">
-          {renderValueInput()}
-        </div>
-
-        {/* Remove */}
         <button onClick={() => onRemove(index)} className="fp-remove-btn" title="Kaldır">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="fp-remove-icon">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </button>
+      </div>
+
+      {/* Value input row (full width) */}
+      <div className="fp-row-value">
+        {renderValueInput()}
       </div>
     </div>
   );
@@ -176,21 +190,10 @@ export default function FilterPanel({ isOpen, onClose, onApply, onClear, activeC
   const [logic, setLogic] = useState('and');
   const panelRef = useRef(null);
 
-  // Close on outside click
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (isOpen && panelRef.current && !panelRef.current.contains(e.target)) {
-        // Don't close on toolbar button click — handled by parent
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen]);
-
   function addCondition() {
     setConditions(prev => [
       ...prev,
-      { field: COLUMNS[0].field, operator: OPERATORS_BY_TYPE[COLUMNS[0].type][0].value, value: '' },
+      { field: COLUMNS[0].field, operator: OPERATORS_BY_TYPE[COLUMNS[0].type][0].value, value: [] },
     ]);
   }
 
@@ -203,9 +206,8 @@ export default function FilterPanel({ isOpen, onClose, onApply, onClear, activeC
   }
 
   function handleApply() {
-    const filled = conditions.filter(c => c.value !== '' && c.value !== undefined);
-    if (filled.length === 0) return;
-    const filter = buildDevExtremeFilter(filled, logic);
+    const filter = buildDevExtremeFilter(conditions, logic);
+    if (!filter) return;
     onApply(filter);
   }
 
@@ -214,12 +216,12 @@ export default function FilterPanel({ isOpen, onClose, onApply, onClear, activeC
     onClear();
   }
 
+  const hasAnyValue = conditions.some(hasValue);
+
   return (
     <>
-      {/* Backdrop */}
       {isOpen && <div className="fp-backdrop" onClick={onClose} />}
 
-      {/* Side panel */}
       <div ref={panelRef} className={`fp-panel ${isOpen ? 'fp-panel--open' : ''}`}>
         {/* Header */}
         <div className="fp-header">
@@ -240,8 +242,7 @@ export default function FilterPanel({ isOpen, onClose, onApply, onClear, activeC
           </div>
           <button onClick={onClose} className="fp-close-btn">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
@@ -268,8 +269,7 @@ export default function FilterPanel({ isOpen, onClose, onApply, onClear, activeC
             <div className="fp-empty">
               <div className="fp-empty-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
               </div>
               <p className="fp-empty-text">Henüz filtre koşulu yok</p>
@@ -298,27 +298,20 @@ export default function FilterPanel({ isOpen, onClose, onApply, onClear, activeC
           )}
         </div>
 
-        {/* Add condition button */}
+        {/* Add condition */}
         <div className="fp-add-wrap">
           <button onClick={addCondition} className="fp-add-btn">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="fp-add-icon">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
             </svg>
             Koşul Ekle
           </button>
         </div>
 
-        {/* Footer actions */}
+        {/* Footer */}
         <div className="fp-footer">
-          <button onClick={handleClear} className="fp-btn-clear">
-            Temizle
-          </button>
-          <button
-            onClick={handleApply}
-            disabled={conditions.filter(c => c.value !== '').length === 0}
-            className="fp-btn-apply"
-          >
+          <button onClick={handleClear} className="fp-btn-clear">Temizle</button>
+          <button onClick={handleApply} disabled={!hasAnyValue} className="fp-btn-apply">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="20 6 9 17 4 12" />
             </svg>
